@@ -1,0 +1,44 @@
+#!/usr/bin/python
+
+import argparse, ee, glob, re, sys, time
+
+parser = argparse.ArgumentParser()
+parser.add_argument('destination', help='Destination asset (e.g. users/YOURUSERNAME/assetname)')
+parser.add_argument('sources', nargs='+', help='Source file or files in Google Cloud Storage, typically geotiff.  Multiple files will be mosaicked.  Paths should start with gs://yourbucketname/')
+
+ee.Initialize()
+
+args = parser.parse_args()
+
+def usage(msg):
+    sys.stderr.write(msg + '\n')
+    parser.print_help()
+    sys.exit(1)
+    
+if not re.match('users/.+/.+', args.destination):
+    usage('Expected destination "%s" to start with "users/username/"' % args.destination)
+    
+for src in args.sources:
+    if not re.match('gs://.+/.+', src):
+        usage('Expected source "%s" to start with "gs://bucketname/"' % src)
+
+print 'Mosaicking sources [%s] and uploading to Earth Engine asset %s' % (', '.join(args.sources), args.destination)
+print 'You can check status at code.earthenginge.google.com in the "Tasks" tab'
+
+id = ee.data.newTaskId()[0]
+
+params = {
+    'id': args.destination,
+    'tilesets': [{'sources': [{'primaryPath': gssrc} for gssrc in args.sources]}]
+#    'bands': [{'id': 'water'}]
+}
+print params
+start_time = time.time()
+ee.data.startIngestion(id, params)
+while True:
+    status = ee.data.getTaskStatus(id)
+    print status
+    if status[0]['state'] in ['COMPLETED', 'FAILED', 'UNKNOWN']:
+        break
+    time.sleep(10)
+print '%d seconds elapsed' % (time.time() - start_time)
